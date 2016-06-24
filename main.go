@@ -14,17 +14,18 @@ func main() {
 	var err error
 	switch os.Args[1] {
 	case "train":
-		if len(os.Args) != 5 {
+		if len(os.Args) != 6 {
 			dieUsage()
 		}
 		rnnFile := os.Args[2]
-		wavDir := os.Args[3]
-		stepSize, parseErr := strconv.ParseFloat(os.Args[4], 64)
+		compressorFile := os.Args[3]
+		wavDir := os.Args[4]
+		stepSize, parseErr := strconv.ParseFloat(os.Args[5], 64)
 		if parseErr != nil {
-			fmt.Fprintln(os.Stderr, "Invalid step size:", os.Args[4])
+			fmt.Fprintln(os.Stderr, "Invalid step size:", os.Args[5])
 			os.Exit(2)
 		}
-		err = Train(rnnFile, wavDir, stepSize)
+		err = Train(rnnFile, compressorFile, wavDir, stepSize)
 	case "talk":
 		if len(os.Args) != 5 {
 			dieUsage()
@@ -46,7 +47,8 @@ func main() {
 }
 
 func dieUsage() {
-	fmt.Fprintln(os.Stderr, "Usage: rnn-talk train <rnn-file> <wav dir> <step size>\n"+
-		"       rnn-talk talk <rnn-file> <output.wav> <seconds>")
+	fmt.Fprintln(os.Stderr,
+		"Usage: rnn-talk train <rnn-file> <compressor> <wav dir> <step size>\n"+
+			"       rnn-talk talk <rnn-file> <output.wav> <seconds>")
 	os.Exit(2)
 }
