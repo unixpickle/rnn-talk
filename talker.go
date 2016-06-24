@@ -23,6 +23,8 @@ type Talker struct {
 	Compressor *eigensongs.Compressor
 	SampleRate int
 	Channels   int
+
+	Min, Max float64
 }
 
 func NewTalker(info *SampleInfo, comp *eigensongs.Compressor) *Talker {
@@ -61,7 +63,7 @@ func NewTalker(info *SampleInfo, comp *eigensongs.Compressor) *Talker {
 			InputCount:  hiddenLayerSizes[len(hiddenLayerSizes)-1],
 			OutputCount: compressedSize,
 		},
-		&neuralnet.LogSoftmaxLayer{},
+		&neuralnet.Sigmoid{},
 	}
 	outputNet.Randomize()
 	outputBlock := rnn.NewNetworkBlock(outputNet, 0)
@@ -72,6 +74,9 @@ func NewTalker(info *SampleInfo, comp *eigensongs.Compressor) *Talker {
 		Compressor: comp,
 		SampleRate: info.SampleRate,
 		Channels:   info.Channels,
+
+		Min: info.Min,
+		Max: info.Max,
 	}
 }
 
@@ -81,24 +86,17 @@ func DeserializeTalker(d []byte) (*Talker, error) {
 		return nil, err
 	}
 
-	if len(slice) != 4 {
+	if len(slice) != 6 {
 		return nil, invalidSliceErr
 	}
 
-	block, ok := slice[0].(rnn.StackedBlock)
-	if !ok {
-		return nil, invalidSliceErr
-	}
-	comp, ok := slice[1].(*eigensongs.Compressor)
-	if !ok {
-		return nil, invalidSliceErr
-	}
-	sampleRate, ok := slice[2].(serializer.Int)
-	if !ok {
-		return nil, invalidSliceErr
-	}
-	channels, ok := slice[3].(serializer.Int)
-	if !ok {
+	block, ok1 := slice[0].(rnn.StackedBlock)
+	comp, ok2 := slice[1].(*eigensongs.Compressor)
+	sampleRate, ok3 := slice[2].(serializer.Int)
+	channels, ok4 := slice[3].(serializer.Int)
+	min, ok5 := slice[4].(serializer.Float64)
+	max, ok6 := slice[5].(serializer.Float64)
+	if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 {
 		return nil, invalidSliceErr
 	}
 
@@ -107,25 +105,38 @@ func DeserializeTalker(d []byte) (*Talker, error) {
 		Compressor: comp,
 		SampleRate: int(sampleRate),
 		Channels:   int(channels),
+		Min:        float64(min),
+		Max:        float64(max),
 	}, nil
 }
 
-// SetTraining enables or disables training-only
-// regularization such as dropout.
-// If training is set to false, then the network will
-// not perform random dropout.
-func (t *Talker) SetTraining(f bool) {
+// SetDropout enables or disables random dropout.
+func (t *Talker) SetDropout(useDropout bool) {
 	for i := 2; i < len(t.Block); i += 2 {
 		networkBlock := t.Block[i].(*rnn.NetworkBlock)
 		network := networkBlock.Network()
 		dropout := network[0].(*neuralnet.DropoutLayer)
-		dropout.Training = f
+		dropout.Training = useDropout
 	}
+}
+
+// SetTraining enables or disables training mode.
+// In training mode, the output of the network is
+// not run through a sigmoid activation function.
+func (t *Talker) SetTraining(training bool) {
+	outNet := t.Block[len(t.Block)-1].(*rnn.NetworkBlock).Network()
+	if training {
+		outNet = outNet[:1]
+	} else {
+		outNet = append(outNet[:1], &neuralnet.Sigmoid{})
+	}
+	t.Block[len(t.Block)-1] = rnn.NewNetworkBlock(outNet, 0)
 }
 
 func (t *Talker) Serialize() ([]byte, error) {
 	slice := []serializer.Serializer{t.Block, t.Compressor,
-		serializer.Int(t.SampleRate), serializer.Int(t.Channels)}
+		serializer.Int(t.SampleRate), serializer.Int(t.Channels),
+		serializer.Float64(t.Min), serializer.Float64(t.Max)}
 	return serializer.SerializeSlice(slice)
 }
 

@@ -35,7 +35,7 @@ func Talk(rnnFile, outputFile string, seconds float64) error {
 		}
 		decompressed := talker.Compressor.Decompress(mat)
 		for i, x := range decompressed.Data {
-			tempSamples[i] = wav.Sample(x)
+			tempSamples[i] = wav.Sample(talker.Min + x*(talker.Max-talker.Min))
 		}
 		output = append(output, tempSamples...)
 	}

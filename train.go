@@ -19,7 +19,7 @@ const (
 	trainingHeadSize            = 50
 	trainingTailSize            = 20
 	trainingMaxLanes            = 25
-	trainingDamping             = 0.01
+	trainingDamping             = 1e-4
 )
 
 func Train(rnnFile, compressorFile, wavDir string, stepSize float64) error {
@@ -55,26 +55,26 @@ func Train(rnnFile, compressorFile, wavDir string, stepSize float64) error {
 
 func trainWithSamples(talker *Talker, s *SampleInfo, step float64) {
 	talker.SetTraining(true)
+	talker.SetDropout(true)
 	defer talker.SetTraining(false)
+	defer talker.SetDropout(false)
 
-	costFunc := neuralnet.DotCost{}
-	gradienter := &neuralnet.Equilibration{
-		RGradienter: &rnn.TruncatedBPTT{
+	costFunc := neuralnet.SigmoidCECost{}
+	gradienter := &neuralnet.AdaGrad{
+		Gradienter: &rnn.TruncatedBPTT{
 			Learner:  talker.Block,
 			CostFunc: costFunc,
 			MaxLanes: trainingMaxLanes,
 			HeadSize: trainingHeadSize,
 			TailSize: trainingTailSize,
 		},
-		Learner: talker.Block,
-		Memory:  trainingEquilibrationMemory,
 		Damping: trainingDamping,
 	}
 
 	var epoch int
 	neuralnet.SGDInteractive(gradienter, s.Samples, step, trainingBatchSize, func() bool {
-		talker.SetTraining(false)
-		defer talker.SetTraining(true)
+		talker.SetDropout(false)
+		defer talker.SetDropout(true)
 
 		runner := &rnn.Runner{Block: talker.Block}
 		cost := runner.TotalCost(validationBatchSize, s.Samples, costFunc)
