@@ -37,6 +37,13 @@ func ReadSamples(wavDir string, comp *eigensongs.Compressor) (*SampleInfo, error
 	} else if len(sounds) == 0 {
 		return nil, errNoAudioFiles
 	}
+	for _, sound := range sounds[1:] {
+		if sound.Channels() != sounds[0].Channels() {
+			return nil, errors.New("files must have same channel count")
+		} else if sound.SampleRate() != sounds[0].SampleRate() {
+			return nil, errors.New("files must have same sample rate")
+		}
+	}
 	var res neuralnet.SliceSampleSet
 	for _, sound := range choppedSounds(sounds) {
 		res = append(res, soundToSample(sound, comp))
