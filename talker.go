@@ -21,14 +21,16 @@ var (
 type Talker struct {
 	Block      rnn.StackedBlock
 	Compressor *eigensongs.Compressor
+	SampleRate int
+	Channels   int
 }
 
-func NewTalker(samples neuralnet.SampleSet, comp *eigensongs.Compressor) *Talker {
+func NewTalker(info *SampleInfo, comp *eigensongs.Compressor) *Talker {
 	_, compressedSize := comp.Dims()
 
 	var stackedBlock rnn.StackedBlock
 
-	mean, stddev := SampleStats(samples)
+	mean, stddev := SampleStats(info.Samples)
 	normalizeNet := neuralnet.Network{
 		&neuralnet.RescaleLayer{Bias: -mean, Scale: 1 / stddev},
 	}
@@ -68,6 +70,8 @@ func NewTalker(samples neuralnet.SampleSet, comp *eigensongs.Compressor) *Talker
 	return &Talker{
 		Block:      stackedBlock,
 		Compressor: comp,
+		SampleRate: info.SampleRate,
+		Channels:   info.Channels,
 	}
 }
 
@@ -77,7 +81,7 @@ func DeserializeTalker(d []byte) (*Talker, error) {
 		return nil, err
 	}
 
-	if len(slice) != 2 {
+	if len(slice) != 4 {
 		return nil, invalidSliceErr
 	}
 
@@ -89,15 +93,26 @@ func DeserializeTalker(d []byte) (*Talker, error) {
 	if !ok {
 		return nil, invalidSliceErr
 	}
+	sampleRate, ok := slice[2].(serializer.Int)
+	if !ok {
+		return nil, invalidSliceErr
+	}
+	channels, ok := slice[3].(serializer.Int)
+	if !ok {
+		return nil, invalidSliceErr
+	}
 
 	return &Talker{
 		Block:      block,
 		Compressor: comp,
+		SampleRate: int(sampleRate),
+		Channels:   int(channels),
 	}, nil
 }
 
 func (t *Talker) Serialize() ([]byte, error) {
-	slice := []serializer.Serializer{t.Block, t.Compressor}
+	slice := []serializer.Serializer{t.Block, t.Compressor,
+		serializer.Int(t.SampleRate), serializer.Int(t.Channels)}
 	return serializer.SerializeSlice(slice)
 }
 

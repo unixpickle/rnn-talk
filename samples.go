@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
@@ -16,20 +17,35 @@ import (
 
 const sampleDuration = time.Minute
 
+var errNoAudioFiles = errors.New("no audio files")
+
+type SampleInfo struct {
+	Samples neuralnet.SampleSet
+
+	Channels   int
+	SampleRate int
+}
+
 // ReadSamples reads all the WAV files from a sample
 // directory, compresses them with the compressor,
 // splits them up into reasonably sized chunks, and
 // returns the resulting samples.
-func ReadSamples(wavDir string, comp *eigensongs.Compressor) (neuralnet.SampleSet, error) {
+func ReadSamples(wavDir string, comp *eigensongs.Compressor) (*SampleInfo, error) {
 	sounds, err := readSounds(wavDir)
 	if err != nil {
 		return nil, err
+	} else if len(sounds) == 0 {
+		return nil, errNoAudioFiles
 	}
 	var res neuralnet.SliceSampleSet
 	for _, sound := range choppedSounds(sounds) {
 		res = append(res, soundToSample(sound, comp))
 	}
-	return res, nil
+	return &SampleInfo{
+		Samples:    res,
+		Channels:   sounds[0].Channels(),
+		SampleRate: sounds[0].SampleRate(),
+	}, nil
 }
 
 // SampleStats returns the standard deviation and mean
