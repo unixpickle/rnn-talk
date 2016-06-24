@@ -3,12 +3,24 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 
 	"github.com/unixpickle/eigensongs"
 	"github.com/unixpickle/serializer"
+	"github.com/unixpickle/weakai/neuralnet"
+	"github.com/unixpickle/weakai/rnn"
 )
 
-const outputPermissions = 0755
+const (
+	outputPermissions           = 0755
+	validationBatchSize         = 10
+	trainingBatchSize           = 10
+	trainingEquilibrationMemory = 0.9
+	trainingHeadSize            = 50
+	trainingTailSize            = 20
+	trainingMaxLanes            = 25
+	trainingDamping             = 0.01
+)
 
 func Train(rnnFile, compressorFile, wavDir string, stepSize float64) error {
 	compressor, err := readCompressor(compressorFile)
@@ -31,13 +43,46 @@ func Train(rnnFile, compressorFile, wavDir string, stepSize float64) error {
 		talker = NewTalker(samples, compressor)
 	}
 
-	// TODO: train here.
+	log.Println("Training LSTM on", samples.Samples.Len(), "samples...")
+	trainWithSamples(talker, samples, stepSize)
 
 	data, err := talker.Serialize()
 	if err != nil {
 		return err
 	}
 	return ioutil.WriteFile(rnnFile, data, outputPermissions)
+}
+
+func trainWithSamples(talker *Talker, s *SampleInfo, step float64) {
+	talker.SetTraining(true)
+	defer talker.SetTraining(false)
+
+	costFunc := neuralnet.DotCost{}
+	gradienter := &neuralnet.Equilibration{
+		RGradienter: &rnn.TruncatedBPTT{
+			Learner:  talker.Block,
+			CostFunc: costFunc,
+			MaxLanes: trainingMaxLanes,
+			HeadSize: trainingHeadSize,
+			TailSize: trainingTailSize,
+		},
+		Learner: talker.Block,
+		Memory:  trainingEquilibrationMemory,
+		Damping: trainingDamping,
+	}
+
+	var epoch int
+	neuralnet.SGDInteractive(gradienter, s.Samples, step, trainingBatchSize, func() bool {
+		talker.SetTraining(false)
+		defer talker.SetTraining(true)
+
+		runner := &rnn.Runner{Block: talker.Block}
+		cost := runner.TotalCost(validationBatchSize, s.Samples, costFunc)
+		log.Printf("Epoch %d: cost=%f", epoch, cost)
+
+		epoch++
+		return true
+	})
 }
 
 func readCompressor(compressorFile string) (*eigensongs.Compressor, error) {
