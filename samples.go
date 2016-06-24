@@ -24,8 +24,6 @@ type SampleInfo struct {
 
 	Channels   int
 	SampleRate int
-
-	Min, Max float64
 }
 
 // ReadSamples reads all the WAV files from a sample
@@ -39,6 +37,7 @@ func ReadSamples(wavDir string, comp *eigensongs.Compressor) (*SampleInfo, error
 	} else if len(sounds) == 0 {
 		return nil, errNoAudioFiles
 	}
+
 	for _, sound := range sounds[1:] {
 		if sound.Channels() != sounds[0].Channels() {
 			return nil, errors.New("files must have same channel count")
@@ -52,25 +51,10 @@ func ReadSamples(wavDir string, comp *eigensongs.Compressor) (*SampleInfo, error
 		res = append(res, soundToSample(sound, comp))
 	}
 
-	min, max := sampleRange(res)
-	for _, seq := range res {
-		sequence := seq.(rnn.Sequence)
-		for _, vecList := range [][]linalg.Vector{sequence.Inputs, sequence.Outputs} {
-			for _, vec := range vecList {
-				for i, x := range vec {
-					vec[i] = (x - min) / (max - min)
-				}
-			}
-		}
-	}
-
 	return &SampleInfo{
 		Samples:    res,
 		Channels:   sounds[0].Channels(),
 		SampleRate: sounds[0].SampleRate(),
-
-		Min: min,
-		Max: max,
 	}, nil
 }
 
@@ -100,35 +84,6 @@ func SampleStats(samples neuralnet.SampleSet) (mean, stddev float64) {
 		}
 	}
 	stddev /= count
-	return
-}
-
-// sampleRange returns the range of values in which
-// sample components fall.
-func sampleRange(samples neuralnet.SampleSet) (min, max float64) {
-	first := true
-	for i := 0; i < samples.Len(); i++ {
-		sample := samples.GetSample(i).(rnn.Sequence)
-		for _, output := range sample.Outputs {
-			for _, x := range output {
-				if first {
-					min = x
-					max = x
-					first = false
-				} else {
-					if min > x {
-						min = x
-					}
-					if max < x {
-						max = x
-					}
-				}
-			}
-		}
-	}
-	if max == min {
-		max++
-	}
 	return
 }
 

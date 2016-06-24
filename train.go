@@ -54,27 +54,26 @@ func Train(rnnFile, compressorFile, wavDir string, stepSize float64) error {
 }
 
 func trainWithSamples(talker *Talker, s *SampleInfo, step float64) {
-	talker.SetTraining(true)
-	talker.SetDropout(true)
-	defer talker.SetTraining(false)
-	defer talker.SetDropout(false)
+	talker.SetDropout(false)
+	//talker.SetDropout(true)
+	//defer talker.SetDropout(false)
 
-	costFunc := neuralnet.SigmoidCECost{}
+	costFunc := neuralnet.MeanSquaredCost{}
 	gradienter := &neuralnet.AdaGrad{
-		Gradienter: &rnn.TruncatedBPTT{
+		Gradienter: &rnn.BPTT{
 			Learner:  talker.Block,
 			CostFunc: costFunc,
 			MaxLanes: trainingMaxLanes,
-			HeadSize: trainingHeadSize,
-			TailSize: trainingTailSize,
+			//HeadSize: trainingHeadSize,
+			//TailSize: trainingTailSize,
 		},
 		Damping: trainingDamping,
 	}
 
 	var epoch int
 	neuralnet.SGDInteractive(gradienter, s.Samples, step, trainingBatchSize, func() bool {
-		talker.SetDropout(false)
-		defer talker.SetDropout(true)
+		//talker.SetDropout(false)
+		//defer talker.SetDropout(true)
 
 		runner := &rnn.Runner{Block: talker.Block}
 		cost := runner.TotalCost(validationBatchSize, s.Samples, costFunc)
