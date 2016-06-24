@@ -110,6 +110,19 @@ func DeserializeTalker(d []byte) (*Talker, error) {
 	}, nil
 }
 
+// SetTraining enables or disables training-only
+// regularization such as dropout.
+// If training is set to false, then the network will
+// not perform random dropout.
+func (t *Talker) SetTraining(f bool) {
+	for i := 2; i < len(t.Block); i += 2 {
+		networkBlock := t.Block[i].(*rnn.NetworkBlock)
+		network := networkBlock.Network()
+		dropout := network[0].(*neuralnet.DropoutLayer)
+		dropout.Training = f
+	}
+}
+
 func (t *Talker) Serialize() ([]byte, error) {
 	slice := []serializer.Serializer{t.Block, t.Compressor,
 		serializer.Int(t.SampleRate), serializer.Int(t.Channels)}
