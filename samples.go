@@ -32,6 +32,35 @@ func ReadSamples(wavDir string, comp *eigensongs.Compressor) (neuralnet.SampleSe
 	return res, nil
 }
 
+// SampleStats returns the standard deviation and mean
+// value of sample inputs.
+func SampleStats(samples neuralnet.SampleSet) (mean, stddev float64) {
+	var count float64
+	for i := 0; i < samples.Len(); i++ {
+		sample := samples.GetSample(i).(rnn.Sequence)
+		for _, input := range sample.Inputs {
+			for _, x := range input {
+				mean += x
+				count += 1
+			}
+		}
+	}
+	if count == 0 {
+		return
+	}
+	mean /= count
+	for i := 0; i < samples.Len(); i++ {
+		sample := samples.GetSample(i).(rnn.Sequence)
+		for _, input := range sample.Inputs {
+			for _, x := range input {
+				stddev += (x - mean) * (x - mean)
+			}
+		}
+	}
+	stddev /= count
+	return
+}
+
 func readSounds(dir string) ([]wav.Sound, error) {
 	contents, err := ioutil.ReadDir(dir)
 	if err != nil {
