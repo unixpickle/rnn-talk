@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"path/filepath"
 	"strings"
 	"time"
@@ -98,6 +99,7 @@ func SampleStats(samples neuralnet.SampleSet) (mean, stddev float64) {
 		}
 	}
 	stddev /= count
+	stddev = math.Sqrt(stddev)
 	return
 }
 
