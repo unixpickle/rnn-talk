@@ -55,11 +55,9 @@ func ReadSamples(wavDir string, comp *eigensongs.Compressor) (*SampleInfo, error
 	min, max := sampleRange(res)
 	for _, seq := range res {
 		sequence := seq.(rnn.Sequence)
-		for _, vecList := range [][]linalg.Vector{sequence.Inputs, sequence.Outputs} {
-			for _, vec := range vecList {
-				for i, x := range vec {
-					vec[i] = (x - min) / (max - min)
-				}
+		for _, vec := range sequence.Outputs {
+			for i, x := range vec {
+				vec[i] = (x - min) / (max - min)
 			}
 		}
 	}
