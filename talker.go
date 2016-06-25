@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"math/rand"
 
 	"github.com/unixpickle/eigensongs"
 	"github.com/unixpickle/serializer"
@@ -14,6 +15,7 @@ const talkerSerializerType = "github.com/unixpickle/rnn-talk.Talker"
 var (
 	hiddenLayerSizes    = []int{300}
 	hiddenLayerDropouts = []float64{0.5}
+	initialWeightStddev = 0.01
 
 	invalidSliceErr = errors.New("invalid deserialized slice")
 )
@@ -46,7 +48,7 @@ func NewTalker(info *SampleInfo, comp *eigensongs.Compressor) *Talker {
 			inputSize = compressedSize
 		}
 		layer := rnn.NewLSTM(inputSize, layerSize)
-		initializeBiases(layer)
+		initializeLSTM(layer)
 		stackedBlock = append(stackedBlock, layer)
 
 		dropoutNetwork := neuralnet.Network{
@@ -144,7 +146,15 @@ func (t *Talker) SerializerType() string {
 	return talkerSerializerType
 }
 
-func initializeBiases(layer *rnn.LSTM) {
+func initializeLSTM(layer *rnn.LSTM) {
+	for i, vec := range layer.Parameters() {
+		if i%2 == 1 {
+			continue
+		}
+		for j := range vec.Vector {
+			vec.Vector[j] = rand.NormFloat64() * initialWeightStddev
+		}
+	}
 	inputBiases := layer.Parameters()[3]
 	for i := range inputBiases.Vector {
 		inputBiases.Vector[i] = -1
