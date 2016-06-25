@@ -17,6 +17,7 @@ func Talk(rnnFile, outputFile string, seconds float64) error {
 	if err != nil {
 		return err
 	}
+	talker.SetDropout(true)
 
 	chunkSize, _ := talker.Compressor.Dims()
 	count := int(float64(talker.Channels*talker.SampleRate) * seconds / float64(chunkSize))
