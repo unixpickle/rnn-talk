@@ -61,12 +61,12 @@ func trainWithSamples(talker *Talker, s *SampleInfo, step float64) {
 
 	costFunc := neuralnet.SigmoidCECost{}
 	gradienter := &neuralnet.AdaGrad{
-		Gradienter: &rnn.TruncatedBPTT{
+		Gradienter: &rnn.BPTT{
 			Learner:  talker.Block,
 			CostFunc: costFunc,
 			MaxLanes: trainingMaxLanes,
-			HeadSize: trainingHeadSize,
-			TailSize: trainingTailSize,
+			//HeadSize: trainingHeadSize,
+			//TailSize: trainingTailSize,
 		},
 		Damping: trainingDamping,
 	}
