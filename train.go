@@ -77,8 +77,11 @@ func trainWithSamples(talker *Talker, s *SampleInfo, step float64) {
 		defer talker.SetDropout(true)
 
 		runner := &rnn.Runner{Block: talker.Block}
+		talker.SetTraining(false)
+		mse := runner.TotalCost(validationBatchSize, s.Samples, neuralnet.MeanSquaredCost{})
+		talker.SetTraining(true)
 		cost := runner.TotalCost(validationBatchSize, s.Samples, costFunc)
-		log.Printf("Epoch %d: cost=%f", epoch, cost)
+		log.Printf("Epoch %d: cost=%f MSE=%f", epoch, cost, mse)
 
 		epoch++
 		return true
