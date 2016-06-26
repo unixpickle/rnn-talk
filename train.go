@@ -54,21 +54,21 @@ func Train(rnnFile, compressorFile, wavDir string, stepSize float64) error {
 }
 
 func trainWithSamples(talker *Talker, s *SampleInfo, step float64) {
-	talker.SetTraining(true)
 	talker.SetDropout(true)
-	defer talker.SetTraining(false)
 	defer talker.SetDropout(false)
 
-	costFunc := neuralnet.SigmoidCECost{}
-	gradienter := &neuralnet.AdaGrad{
-		Gradienter: &rnn.BPTT{
+	costFunc := neuralnet.MeanSquaredCost{}
+	gradienter := &neuralnet.Equilibration{
+		RGradienter: &rnn.BPTT{
 			Learner:  talker.Block,
 			CostFunc: costFunc,
 			MaxLanes: trainingMaxLanes,
 			//HeadSize: trainingHeadSize,
 			//TailSize: trainingTailSize,
 		},
-		Damping: trainingDamping,
+		Learner: talker.Block,
+		Memory:  0.5,
+		Damping: 0.0001,
 	}
 
 	var epoch int
@@ -77,11 +77,8 @@ func trainWithSamples(talker *Talker, s *SampleInfo, step float64) {
 		defer talker.SetDropout(true)
 
 		runner := &rnn.Runner{Block: talker.Block}
-		talker.SetTraining(false)
-		mse := runner.TotalCost(validationBatchSize, s.Samples, neuralnet.MeanSquaredCost{})
-		talker.SetTraining(true)
-		cost := runner.TotalCost(validationBatchSize, s.Samples, costFunc)
-		log.Printf("Epoch %d: cost=%f MSE=%f", epoch, cost, mse)
+		mse := runner.TotalCost(validationBatchSize, s.Samples, costFunc)
+		log.Printf("Epoch %d: MSE=%f", epoch, mse)
 
 		epoch++
 		return true

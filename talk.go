@@ -29,9 +29,6 @@ func Talk(rnnFile, outputFile string, seconds float64) error {
 	tempSamples := make([]wav.Sample, chunkSize)
 	for i := 0; i < count; i++ {
 		lastOutput = runner.StepTime(lastOutput)
-		for i, x := range lastOutput {
-			lastOutput[i] = talker.Min + x*(talker.Max-talker.Min)
-		}
 		mat := &linalg.Matrix{
 			Rows: 1,
 			Cols: len(lastOutput),
