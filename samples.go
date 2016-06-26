@@ -11,8 +11,8 @@ import (
 
 	"github.com/unixpickle/eigensongs"
 	"github.com/unixpickle/num-analysis/linalg"
+	"github.com/unixpickle/sgd"
 	"github.com/unixpickle/wav"
-	"github.com/unixpickle/weakai/neuralnet"
 	"github.com/unixpickle/weakai/rnn"
 )
 
@@ -21,7 +21,7 @@ const sampleDuration = time.Minute
 var errNoAudioFiles = errors.New("no audio files")
 
 type SampleInfo struct {
-	Samples neuralnet.SampleSet
+	Samples sgd.SampleSet
 
 	Channels   int
 	SampleRate int
@@ -48,7 +48,7 @@ func ReadSamples(wavDir string, comp *eigensongs.Compressor) (*SampleInfo, error
 		}
 	}
 
-	var res neuralnet.SliceSampleSet
+	var res sgd.SliceSampleSet
 	for _, sound := range choppedSounds(sounds) {
 		res = append(res, soundToSample(sound, comp))
 	}
@@ -75,7 +75,7 @@ func ReadSamples(wavDir string, comp *eigensongs.Compressor) (*SampleInfo, error
 
 // SampleStats returns the standard deviation and mean
 // value of sample inputs.
-func SampleStats(samples neuralnet.SampleSet) (mean, stddev float64) {
+func SampleStats(samples sgd.SampleSet) (mean, stddev float64) {
 	var count float64
 	for i := 0; i < samples.Len(); i++ {
 		sample := samples.GetSample(i).(rnn.Sequence)
@@ -105,7 +105,7 @@ func SampleStats(samples neuralnet.SampleSet) (mean, stddev float64) {
 
 // sampleRange returns the range of values in which
 // sample components fall.
-func sampleRange(samples neuralnet.SampleSet) (min, max float64) {
+func sampleRange(samples sgd.SampleSet) (min, max float64) {
 	first := true
 	for i := 0; i < samples.Len(); i++ {
 		sample := samples.GetSample(i).(rnn.Sequence)

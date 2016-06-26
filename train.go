@@ -7,6 +7,7 @@ import (
 
 	"github.com/unixpickle/eigensongs"
 	"github.com/unixpickle/serializer"
+	"github.com/unixpickle/sgd"
 	"github.com/unixpickle/weakai/neuralnet"
 	"github.com/unixpickle/weakai/rnn"
 )
@@ -60,7 +61,7 @@ func trainWithSamples(talker *Talker, s *SampleInfo, step float64) {
 	defer talker.SetDropout(false)
 
 	costFunc := neuralnet.SigmoidCECost{}
-	gradienter := &neuralnet.AdaGrad{
+	gradienter := &sgd.AdaGrad{
 		Gradienter: &rnn.BPTT{
 			Learner:  talker.Block,
 			CostFunc: costFunc,
@@ -72,7 +73,7 @@ func trainWithSamples(talker *Talker, s *SampleInfo, step float64) {
 	}
 
 	var epoch int
-	neuralnet.SGDInteractive(gradienter, s.Samples, step, trainingBatchSize, func() bool {
+	sgd.SGDInteractive(gradienter, s.Samples, step, trainingBatchSize, func() bool {
 		talker.SetDropout(false)
 		defer talker.SetDropout(true)
 
