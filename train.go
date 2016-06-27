@@ -61,7 +61,7 @@ func trainWithSamples(talker *Talker, s *SampleInfo, step float64) {
 	defer talker.SetDropout(false)
 
 	costFunc := neuralnet.SigmoidCECost{}
-	gradienter := &sgd.AdaGrad{
+	gradienter := &sgd.Adam{
 		Gradienter: &rnn.BPTT{
 			Learner:  talker.Block,
 			CostFunc: costFunc,
@@ -69,7 +69,6 @@ func trainWithSamples(talker *Talker, s *SampleInfo, step float64) {
 			//HeadSize: trainingHeadSize,
 			//TailSize: trainingTailSize,
 		},
-		Damping: trainingDamping,
 	}
 
 	var epoch int

@@ -14,7 +14,7 @@ const talkerSerializerType = "github.com/unixpickle/rnn-talk.Talker"
 
 var (
 	hiddenLayerSizes    = []int{300}
-	hiddenLayerDropouts = []float64{0.5}
+	hiddenLayerDropouts = []float64{1}
 	initialWeightStddev = 0.01
 
 	invalidSliceErr = errors.New("invalid deserialized slice")
@@ -60,14 +60,15 @@ func NewTalker(info *SampleInfo, comp *eigensongs.Compressor) *Talker {
 		dropoutBlock := rnn.NewNetworkBlock(dropoutNetwork, 0)
 		stackedBlock = append(stackedBlock, dropoutBlock)
 	}
+	outputDenseLayer := &neuralnet.DenseLayer{
+		InputCount:  hiddenLayerSizes[len(hiddenLayerSizes)-1],
+		OutputCount: compressedSize,
+	}
+	initializeOutputLayer(outputDenseLayer, stddev)
 	outputNet := neuralnet.Network{
-		&neuralnet.DenseLayer{
-			InputCount:  hiddenLayerSizes[len(hiddenLayerSizes)-1],
-			OutputCount: compressedSize,
-		},
+		outputDenseLayer,
 		&neuralnet.Sigmoid{},
 	}
-	outputNet.Randomize()
 	outputBlock := rnn.NewNetworkBlock(outputNet, 0)
 	stackedBlock = append(stackedBlock, outputBlock)
 
@@ -149,20 +150,21 @@ func (t *Talker) SerializerType() string {
 func initializeLSTM(layer *rnn.LSTM) {
 	for i, vec := range layer.Parameters() {
 		if i%2 == 1 {
-			continue
+			for j := range vec.Vector {
+				vec.Vector[j] = 0
+			}
+		} else {
+			for j := range vec.Vector {
+				vec.Vector[j] = rand.NormFloat64() * initialWeightStddev
+			}
 		}
-		for j := range vec.Vector {
-			vec.Vector[j] = rand.NormFloat64() * initialWeightStddev
-		}
 	}
-	inputBiases := layer.Parameters()[3]
-	for i := range inputBiases.Vector {
-		inputBiases.Vector[i] = -1
-	}
-	outputBiases := layer.Parameters()[7]
-	for i := range outputBiases.Vector {
-		outputBiases.Vector[i] = -2
-	}
+}
+
+func initializeOutputLayer(layer *neuralnet.DenseLayer, stddev float64) {
+	layer.Randomize()
+	layer.Weights.Data.Vector.Scale(2 * stddev)
+	layer.Biases.Var.Vector.Scale(2 * stddev)
 }
 
 func init() {
