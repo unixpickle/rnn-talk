@@ -60,15 +60,15 @@ func NewTalker(info *SampleInfo, comp *eigensongs.Compressor) *Talker {
 		dropoutBlock := rnn.NewNetworkBlock(dropoutNetwork, 0)
 		stackedBlock = append(stackedBlock, dropoutBlock)
 	}
-	outputDenseLayer := &neuralnet.DenseLayer{
-		InputCount:  hiddenLayerSizes[len(hiddenLayerSizes)-1],
-		OutputCount: compressedSize,
-	}
-	initializeOutputLayer(outputDenseLayer, stddev)
 	outputNet := neuralnet.Network{
-		outputDenseLayer,
+		&neuralnet.DenseLayer{
+			InputCount:  hiddenLayerSizes[len(hiddenLayerSizes)-1],
+			OutputCount: compressedSize,
+		},
+		&neuralnet.RescaleLayer{Scale: 2 * stddev},
 		&neuralnet.Sigmoid{},
 	}
+	outputNet.Randomize()
 	outputBlock := rnn.NewNetworkBlock(outputNet, 0)
 	stackedBlock = append(stackedBlock, outputBlock)
 
@@ -129,9 +129,9 @@ func (t *Talker) SetDropout(useDropout bool) {
 func (t *Talker) SetTraining(training bool) {
 	outNet := t.Block[len(t.Block)-1].(*rnn.NetworkBlock).Network()
 	if training {
-		outNet = outNet[:1]
+		outNet = outNet[:2]
 	} else {
-		outNet = append(outNet[:1], &neuralnet.Sigmoid{})
+		outNet = append(outNet[:2], &neuralnet.Sigmoid{})
 	}
 	t.Block[len(t.Block)-1] = rnn.NewNetworkBlock(outNet, 0)
 }
@@ -159,12 +159,6 @@ func initializeLSTM(layer *rnn.LSTM) {
 			}
 		}
 	}
-}
-
-func initializeOutputLayer(layer *neuralnet.DenseLayer, stddev float64) {
-	layer.Randomize()
-	layer.Weights.Data.Vector.Scale(2 * stddev)
-	layer.Biases.Var.Vector.Scale(2 * stddev)
 }
 
 func init() {
