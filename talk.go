@@ -61,7 +61,7 @@ func Talk(rnnFile, outputFile string, seconds float64, primingFile string) error
 func primeTalker(t *Talker, r *rnn.Runner, primingFile string) error {
 	sound, err := wav.ReadSoundFile(primingFile)
 	if err != nil {
-		return errors.New("failed to reading priming file: " + err.Error())
+		return errors.New("failed to read priming file: " + err.Error())
 	}
 	sample := soundToSample(sound, t.Compressor)
 	for _, input := range sample.Inputs {
