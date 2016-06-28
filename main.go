@@ -27,7 +27,7 @@ func main() {
 		}
 		err = Train(rnnFile, compressorFile, wavDir, stepSize)
 	case "talk":
-		if len(os.Args) != 5 {
+		if len(os.Args) != 5 && len(os.Args) != 6 {
 			dieUsage()
 		}
 		rnnFile := os.Args[2]
@@ -37,7 +37,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Invalid duration:", os.Args[4])
 			os.Exit(2)
 		}
-		err = Talk(rnnFile, outputFile, duration)
+		primingFile := ""
+		if len(os.Args) == 6 {
+			primingFile = os.Args[5]
+		}
+		err = Talk(rnnFile, outputFile, duration, primingFile)
 	}
 
 	if err != nil {
@@ -49,6 +53,6 @@ func main() {
 func dieUsage() {
 	fmt.Fprintln(os.Stderr,
 		"Usage: rnn-talk train <rnn-file> <compressor> <wav dir> <step size>\n"+
-			"       rnn-talk talk <rnn-file> <output.wav> <seconds>")
+			"       rnn-talk talk <rnn-file> <output.wav> <seconds> [prime.wav]")
 	os.Exit(2)
 }
