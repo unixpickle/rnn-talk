@@ -16,6 +16,7 @@ var (
 	hiddenLayerSizes    = []int{300}
 	hiddenLayerDropouts = []float64{1}
 	initialWeightStddev = 0.01
+	initialRememberBias = 2.0
 
 	invalidSliceErr = errors.New("invalid deserialized slice")
 )
@@ -149,7 +150,11 @@ func (t *Talker) SerializerType() string {
 
 func initializeLSTM(layer *rnn.LSTM) {
 	for i, vec := range layer.Parameters() {
-		if i%2 == 1 {
+		if i == 5 {
+			for j := range vec.Vector {
+				vec.Vector[j] = initialRememberBias
+			}
+		} else if i%2 == 1 {
 			for j := range vec.Vector {
 				vec.Vector[j] = 0
 			}
