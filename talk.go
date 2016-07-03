@@ -30,11 +30,11 @@ func Talk(rnnFile, outputFile string, seconds float64, primingFile string) error
 		talker.SetDropout(true)
 	}
 
-	chunkSize, _ := talker.Compressor.Dims()
+	chunkSize, compressedSize := talker.Compressor.Dims()
 	count := int(float64(talker.Channels*talker.SampleRate) * seconds / float64(chunkSize))
 
 	var output []wav.Sample
-	lastOutput := make(linalg.Vector, talker.Block.StateSize())
+	lastOutput := make(linalg.Vector, compressedSize)
 	tempSamples := make([]wav.Sample, chunkSize)
 	for i := 0; i < count; i++ {
 		lastOutput = runner.StepTime(lastOutput)
