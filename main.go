@@ -42,6 +42,14 @@ func main() {
 			primingFile = os.Args[5]
 		}
 		err = Talk(rnnFile, outputFile, duration, primingFile)
+	case "echo":
+		if len(os.Args) != 5 {
+			dieUsage()
+		}
+		rnnFile := os.Args[2]
+		inputFile := os.Args[3]
+		outputFile := os.Args[4]
+		err = Echo(rnnFile, inputFile, outputFile)
 	}
 
 	if err != nil {
@@ -53,6 +61,7 @@ func main() {
 func dieUsage() {
 	fmt.Fprintln(os.Stderr,
 		"Usage: rnn-talk train <rnn-file> <compressor> <wav dir> <step size>\n"+
-			"       rnn-talk talk <rnn-file> <output.wav> <seconds> [prime.wav]")
+			"       rnn-talk talk <rnn-file> <output.wav> <seconds> [prime.wav]\n"+
+			"       rnn-talk echo <rnn-file> <input.wav> <output.wav>")
 	os.Exit(2)
 }

@@ -66,7 +66,7 @@ func primeTalker(t *Talker, r *rnn.Runner, primingFile string) error {
 	sample := soundToSample(sound, t.Compressor)
 	for _, input := range sample.Inputs {
 		for i, x := range input {
-			input[i] = t.Min + x*(t.Max-t.Min)
+			input[i] = (x - t.Min) / (t.Max - t.Min)
 		}
 		r.StepTime(input)
 	}
