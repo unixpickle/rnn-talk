@@ -4,195 +4,137 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"math"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/unixpickle/eigensongs"
 	"github.com/unixpickle/num-analysis/linalg"
 	"github.com/unixpickle/sgd"
 	"github.com/unixpickle/wav"
-	"github.com/unixpickle/weakai/rnn"
+	"github.com/unixpickle/weakai/rnn/seqtoseq"
 )
 
-const sampleDuration = time.Minute
+const (
+	sampleDuration = time.Second * 3
+	sampleRate     = 8000
+)
 
 var errNoAudioFiles = errors.New("no audio files")
+var soundCache = newSampleCache()
 
+// SampleInfo stores informatino about a sample.
 type SampleInfo struct {
-	Samples sgd.SampleSet
-
-	Channels   int
-	SampleRate int
-
-	Min, Max float64
+	Path  string
+	Start time.Duration
+	End   time.Duration
 }
 
-// ReadSamples reads all the WAV files from a sample
-// directory, compresses them with the compressor,
-// splits them up into reasonably sized chunks, and
-// returns the resulting samples.
-func ReadSamples(wavDir string, comp *eigensongs.Compressor) (*SampleInfo, error) {
-	sounds, err := readSounds(wavDir)
+// A SampleSet lazily loads audio snippets from a sample
+// directory full of WAV files.
+type SampleSet []SampleInfo
+
+// ReadSampleSet reads information about all of the WAV
+// files in a directory and creates a SampleSet out of
+// said information.
+func ReadSampleSet(wavDir string) (SampleSet, error) {
+	headers, err := readHeaders(wavDir)
 	if err != nil {
 		return nil, err
-	} else if len(sounds) == 0 {
+	} else if len(headers) == 0 {
 		return nil, errNoAudioFiles
 	}
-	for _, sound := range sounds[1:] {
-		if sound.Channels() != sounds[0].Channels() {
-			return nil, errors.New("files must have same channel count")
-		} else if sound.SampleRate() != sounds[0].SampleRate() {
-			return nil, errors.New("files must have same sample rate")
+
+	var res SampleSet
+	for path, header := range headers {
+		dur := header.Duration()
+		for t := time.Duration(0); t+sampleDuration <= dur; t += sampleDuration {
+			res = append(res, SampleInfo{
+				Path:  path,
+				Start: t,
+				End:   t + sampleDuration,
+			})
 		}
 	}
 
-	var res sgd.SliceSampleSet
-	for _, sound := range choppedSounds(sounds) {
-		res = append(res, soundToSample(sound, comp))
-	}
-
-	min, max := sampleRange(res)
-	for _, seq := range res {
-		sequence := seq.(rnn.Sequence)
-		for _, vec := range sequence.Outputs {
-			for i, x := range vec {
-				vec[i] = (x - min) / (max - min)
-			}
-		}
-	}
-
-	return &SampleInfo{
-		Samples:    res,
-		Channels:   sounds[0].Channels(),
-		SampleRate: sounds[0].SampleRate(),
-
-		Min: min,
-		Max: max,
-	}, nil
+	return res, nil
 }
 
-// SampleStats returns the standard deviation and mean
-// value of sample inputs.
-func SampleStats(samples sgd.SampleSet) (mean, stddev float64) {
-	var count float64
-	for i := 0; i < samples.Len(); i++ {
-		sample := samples.GetSample(i).(rnn.Sequence)
-		for _, output := range sample.Outputs {
-			for _, x := range output {
-				mean += x
-				count += 1
-			}
-		}
-	}
-	if count == 0 {
-		return
-	}
-	mean /= count
-	for i := 0; i < samples.Len(); i++ {
-		sample := samples.GetSample(i).(rnn.Sequence)
-		for _, output := range sample.Outputs {
-			for _, x := range output {
-				stddev += (x - mean) * (x - mean)
-			}
-		}
-	}
-	stddev /= count
-	stddev = math.Sqrt(stddev)
-	return
+// Len returns the number of samples.
+func (s SampleSet) Len() int {
+	return len(s)
 }
 
-// sampleRange returns the range of values in which
-// sample components fall.
-func sampleRange(samples sgd.SampleSet) (min, max float64) {
-	first := true
-	for i := 0; i < samples.Len(); i++ {
-		sample := samples.GetSample(i).(rnn.Sequence)
-		for _, output := range sample.Outputs {
-			for _, x := range output {
-				if first {
-					min = x
-					max = x
-					first = false
-				} else {
-					if min > x {
-						min = x
-					}
-					if max < x {
-						max = x
-					}
-				}
-			}
-		}
-	}
-	if max == min {
-		max++
-	}
-	return
+// Swap swaps the samples at two indices.
+func (s SampleSet) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
 }
 
-func readSounds(dir string) ([]wav.Sound, error) {
+// GetSample reads a sample as PCM data and returns the
+// data as a seqtoseq.Sample.
+func (s SampleSet) GetSample(i int) interface{} {
+	sample := s[i]
+	sound := soundCache.readFile(sample.Path)
+	wav.Crop(sound, sample.Start, sample.End)
+	rateConv := wav.NewPCM8Sound(1, sampleRate)
+	wav.Append(rateConv, sound)
+
+	var res seqtoseq.Sample
+	for _, pcmSample := range rateConv.Samples()[:len(rateConv.Samples())-1] {
+		res.Inputs = append(res.Inputs, discreteSample(pcmSample))
+	}
+	for _, pcmSample := range rateConv.Samples()[1:] {
+		res.Outputs = append(res.Outputs, discreteSample(pcmSample))
+	}
+	return res
+}
+
+// Subset returns a subset of the sample set.
+func (s SampleSet) Subset(i, j int) sgd.SampleSet {
+	return s[i:j]
+}
+
+// Copy returns a copy of the sample set.
+func (s SampleSet) Copy() sgd.SampleSet {
+	res := make(SampleSet, len(s))
+	copy(res, s)
+	return res
+}
+
+func readHeaders(dir string) (map[string]*wav.Header, error) {
 	contents, err := ioutil.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
 
-	var sounds []wav.Sound
+	res := map[string]*wav.Header{}
 	for _, obj := range contents {
-		if strings.HasPrefix(obj.Name(), ".") {
+		if strings.HasPrefix(obj.Name(), ".") ||
+			!strings.HasSuffix(obj.Name(), ".wav") {
 			continue
 		}
 		p := filepath.Join(dir, obj.Name())
-		sound, err := wav.ReadSoundFile(p)
+		f, err := os.Open(p)
 		if err != nil {
-			return nil, fmt.Errorf("error reading %s: %s", p, err)
+			return nil, err
 		}
-		sounds = append(sounds, sound)
+		header, err := wav.ReadHeader(f)
+		f.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %s", p, err)
+		}
+		res[p] = header
 	}
 
-	return sounds, nil
+	return res, nil
 }
 
-func choppedSounds(sounds []wav.Sound) []wav.Sound {
-	var res []wav.Sound
-	for _, fullSound := range sounds {
-		duration := fullSound.Duration()
-		for t := time.Duration(0); t < duration; t += sampleDuration {
-			cropped := fullSound.Clone()
-			wav.Crop(cropped, t, t+sampleDuration)
-			res = append(res, cropped)
-		}
-	}
-	return res
+func discreteSample(s wav.Sample) linalg.Vector {
+	outVec := make(linalg.Vector, 128)
+	outVec[int(s*0x40+0x40)] = 1
+	return outVec
 }
 
-func soundToSample(sound wav.Sound, comp *eigensongs.Compressor) rnn.Sequence {
-	var res rnn.Sequence
-
-	chunkSize, compressedSize := comp.Dims()
-	samples := sound.Samples()
-
-	floatChunk := make(linalg.Vector, chunkSize)
-	floatMat := &linalg.Matrix{
-		Rows: 1,
-		Cols: len(floatChunk),
-		Data: floatChunk,
-	}
-	for i := 0; i < len(samples)-chunkSize; i += chunkSize {
-		chunk := sound.Samples()[i : i+chunkSize]
-		for j, x := range chunk {
-			floatChunk[j] = float64(x)
-		}
-		compressed := comp.Compress(floatMat)
-		if i > 0 {
-			res.Inputs = append(res.Inputs, res.Outputs[len(res.Outputs)-1])
-		} else {
-			blank := make(linalg.Vector, compressedSize)
-			res.Inputs = append(res.Inputs, blank)
-		}
-		res.Outputs = append(res.Outputs, compressed.Data)
-	}
-
-	return res
+func continuousSample(i int) wav.Sample {
+	return (wav.Sample(i) / 0x40) - 0x40
 }

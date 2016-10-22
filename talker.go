@@ -1,55 +1,35 @@
 package main
 
 import (
-	"errors"
-	"math/rand"
-
-	"github.com/unixpickle/eigensongs"
 	"github.com/unixpickle/serializer"
 	"github.com/unixpickle/weakai/neuralnet"
 	"github.com/unixpickle/weakai/rnn"
 )
 
-const talkerSerializerType = "github.com/unixpickle/rnn-talk.Talker"
-
 var (
-	hiddenLayerSizes    = []int{300}
+	hiddenLayerSizes    = []int{100}
 	hiddenLayerDropouts = []float64{1}
-	initialWeightStddev = 0.01
-	initialRememberBias = 2.0
-
-	invalidSliceErr = errors.New("invalid deserialized slice")
 )
 
-type Talker struct {
-	Block      rnn.StackedBlock
-	Compressor *eigensongs.Compressor
-	SampleRate int
-	Channels   int
-
-	Min, Max float64
+func init() {
+	var t Talker
+	serializer.RegisterTypedDeserializer(t.SerializerType(), DeserializeTalker)
 }
 
-func NewTalker(info *SampleInfo, comp *eigensongs.Compressor) *Talker {
-	_, compressedSize := comp.Dims()
+type Talker struct {
+	Block rnn.StackedBlock
+}
 
+func NewTalker() *Talker {
 	var stackedBlock rnn.StackedBlock
-
-	mean, stddev := SampleStats(info.Samples)
-	normalizeNet := neuralnet.Network{
-		&neuralnet.RescaleLayer{Bias: -mean, Scale: 1 / stddev},
-	}
-	stackedBlock = append(stackedBlock, rnn.NewNetworkBlock(normalizeNet, 0))
-
 	for i, layerSize := range hiddenLayerSizes {
 		var inputSize int
 		if i > 0 {
 			inputSize = hiddenLayerSizes[i-1]
 		} else {
-			inputSize = compressedSize
+			inputSize = len(discreteSample(0))
 		}
 		layer := rnn.NewLSTM(inputSize, layerSize)
-		initializeLSTM(layer)
 		stackedBlock = append(stackedBlock, layer)
 
 		dropoutNetwork := neuralnet.Network{
@@ -64,59 +44,30 @@ func NewTalker(info *SampleInfo, comp *eigensongs.Compressor) *Talker {
 	outputNet := neuralnet.Network{
 		&neuralnet.DenseLayer{
 			InputCount:  hiddenLayerSizes[len(hiddenLayerSizes)-1],
-			OutputCount: compressedSize,
+			OutputCount: len(discreteSample(0)),
 		},
-		&neuralnet.RescaleLayer{Scale: 2 * stddev},
-		&neuralnet.Sigmoid{},
+		&neuralnet.LogSoftmaxLayer{},
 	}
 	outputNet.Randomize()
 	outputBlock := rnn.NewNetworkBlock(outputNet, 0)
 	stackedBlock = append(stackedBlock, outputBlock)
 
 	return &Talker{
-		Block:      stackedBlock,
-		Compressor: comp,
-		SampleRate: info.SampleRate,
-		Channels:   info.Channels,
-
-		Min: info.Min,
-		Max: info.Max,
+		Block: stackedBlock,
 	}
 }
 
 func DeserializeTalker(d []byte) (*Talker, error) {
-	slice, err := serializer.DeserializeSlice(d)
+	block, err := rnn.DeserializeStackedBlock(d)
 	if err != nil {
 		return nil, err
 	}
-
-	if len(slice) != 6 {
-		return nil, invalidSliceErr
-	}
-
-	block, ok1 := slice[0].(rnn.StackedBlock)
-	comp, ok2 := slice[1].(*eigensongs.Compressor)
-	sampleRate, ok3 := slice[2].(serializer.Int)
-	channels, ok4 := slice[3].(serializer.Int)
-	min, ok5 := slice[4].(serializer.Float64)
-	max, ok6 := slice[5].(serializer.Float64)
-	if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 {
-		return nil, invalidSliceErr
-	}
-
-	return &Talker{
-		Block:      block,
-		Compressor: comp,
-		SampleRate: int(sampleRate),
-		Channels:   int(channels),
-		Min:        float64(min),
-		Max:        float64(max),
-	}, nil
+	return &Talker{Block: block}, nil
 }
 
 // SetDropout enables or disables random dropout.
 func (t *Talker) SetDropout(useDropout bool) {
-	for i := 2; i < len(t.Block); i += 2 {
+	for i := 1; i < len(t.Block); i += 2 {
 		networkBlock := t.Block[i].(*rnn.NetworkBlock)
 		network := networkBlock.Network()
 		dropout := network[0].(*neuralnet.DropoutLayer)
@@ -124,51 +75,10 @@ func (t *Talker) SetDropout(useDropout bool) {
 	}
 }
 
-// SetTraining enables or disables training mode.
-// In training mode, the output of the network is
-// not run through a sigmoid activation function.
-func (t *Talker) SetTraining(training bool) {
-	outNet := t.Block[len(t.Block)-1].(*rnn.NetworkBlock).Network()
-	if training {
-		outNet = outNet[:2]
-	} else {
-		outNet = append(outNet[:2], &neuralnet.Sigmoid{})
-	}
-	t.Block[len(t.Block)-1] = rnn.NewNetworkBlock(outNet, 0)
-}
-
 func (t *Talker) Serialize() ([]byte, error) {
-	slice := []serializer.Serializer{t.Block, t.Compressor,
-		serializer.Int(t.SampleRate), serializer.Int(t.Channels),
-		serializer.Float64(t.Min), serializer.Float64(t.Max)}
-	return serializer.SerializeSlice(slice)
+	return t.Block.Serialize()
 }
 
 func (t *Talker) SerializerType() string {
-	return talkerSerializerType
-}
-
-func initializeLSTM(layer *rnn.LSTM) {
-	for i, vec := range layer.Parameters() {
-		if i == 5 {
-			for j := range vec.Vector {
-				vec.Vector[j] = initialRememberBias
-			}
-		} else if i%2 == 1 {
-			for j := range vec.Vector {
-				vec.Vector[j] = 0
-			}
-		} else {
-			for j := range vec.Vector {
-				vec.Vector[j] = rand.NormFloat64() * initialWeightStddev
-			}
-		}
-	}
-}
-
-func init() {
-	serializer.RegisterDeserializer(talkerSerializerType,
-		func(d []byte) (serializer.Serializer, error) {
-			return DeserializeTalker(d)
-		})
+	return "github.com/unixpickle/rnn-talk.Talker"
 }

@@ -1,38 +1,28 @@
 package main
 
 import (
-	"fmt"
 	"io/ioutil"
 	"log"
 
-	"github.com/unixpickle/eigensongs"
-	"github.com/unixpickle/serializer"
 	"github.com/unixpickle/sgd"
 	"github.com/unixpickle/weakai/neuralnet"
 	"github.com/unixpickle/weakai/rnn"
+	"github.com/unixpickle/weakai/rnn/seqtoseq"
 )
 
 const (
-	outputPermissions           = 0755
-	validationBatchSize         = 10
-	trainingBatchSize           = 10
-	trainingEquilibrationMemory = 0.9
-	trainingHeadSize            = 50
-	trainingTailSize            = 20
-	trainingMaxLanes            = 25
-	trainingDamping             = 1e-4
+	outputPermissions = 0755
+	trainingBatchSize = 1
 )
 
-func Train(rnnFile, compressorFile, wavDir string, stepSize float64) error {
-	compressor, err := readCompressor(compressorFile)
-	if err != nil {
-		return err
-	}
-	samples, err := ReadSamples(wavDir, compressor)
+func Train(rnnFile, wavDir string, stepSize float64) error {
+	log.Println("Loading samples...")
+	samples, err := ReadSampleSet(wavDir)
 	if err != nil {
 		return err
 	}
 
+	log.Println("Creating/loading talker...")
 	var talker *Talker
 	talkerData, err := ioutil.ReadFile(rnnFile)
 	if err == nil {
@@ -41,10 +31,10 @@ func Train(rnnFile, compressorFile, wavDir string, stepSize float64) error {
 			return err
 		}
 	} else {
-		talker = NewTalker(samples, compressor)
+		talker = NewTalker()
 	}
 
-	log.Println("Training LSTM on", samples.Samples.Len(), "samples...")
+	log.Println("Training RNN on", samples.Len(), "samples...")
 	trainWithSamples(talker, samples, stepSize)
 
 	data, err := talker.Serialize()
@@ -54,52 +44,32 @@ func Train(rnnFile, compressorFile, wavDir string, stepSize float64) error {
 	return ioutil.WriteFile(rnnFile, data, outputPermissions)
 }
 
-func trainWithSamples(talker *Talker, s *SampleInfo, step float64) {
-	talker.SetTraining(true)
+func trainWithSamples(talker *Talker, s SampleSet, step float64) {
 	talker.SetDropout(true)
-	defer talker.SetTraining(false)
 	defer talker.SetDropout(false)
 
-	costFunc := neuralnet.SigmoidCECost{}
+	costFunc := neuralnet.DotCost{}
 	gradienter := &sgd.Adam{
-		Gradienter: &rnn.BPTT{
+		Gradienter: &seqtoseq.Gradienter{
+			SeqFunc:  &rnn.BlockSeqFunc{talker.Block},
 			Learner:  talker.Block,
 			CostFunc: costFunc,
-			MaxLanes: trainingMaxLanes,
-			//HeadSize: trainingHeadSize,
-			//TailSize: trainingTailSize,
 		},
 	}
 
-	var epoch int
-	sgd.SGDInteractive(gradienter, s.Samples, step, trainingBatchSize, func() bool {
+	var iter int
+	var last sgd.SampleSet
+	sgd.SGDMini(gradienter, s, step, trainingBatchSize, func(m sgd.SampleSet) bool {
 		talker.SetDropout(false)
 		defer talker.SetDropout(true)
-
-		runner := &rnn.Runner{Block: talker.Block}
-		talker.SetTraining(false)
-		mse := runner.TotalCost(validationBatchSize, s.Samples, neuralnet.MeanSquaredCost{})
-		talker.SetTraining(true)
-		cost := runner.TotalCost(validationBatchSize, s.Samples, costFunc)
-		log.Printf("Epoch %d: cost=%f MSE=%f", epoch, cost, mse)
-
-		epoch++
+		var lastCost float64
+		if last != nil {
+			lastCost = seqtoseq.TotalCostBlock(talker.Block, 1, last, costFunc)
+		}
+		last = m.Copy()
+		cost := seqtoseq.TotalCostBlock(talker.Block, 1, m, costFunc)
+		log.Printf("Iteration %d: cost=%f last=%f", iter, cost, lastCost)
+		iter++
 		return true
 	})
-}
-
-func readCompressor(compressorFile string) (*eigensongs.Compressor, error) {
-	compressorData, err := ioutil.ReadFile(compressorFile)
-	if err != nil {
-		return nil, err
-	}
-	fileObj, err := serializer.DeserializeWithType(compressorData)
-	if err != nil {
-		return nil, err
-	}
-	compressor, ok := fileObj.(*eigensongs.Compressor)
-	if !ok {
-		return nil, fmt.Errorf("invalid compressor type: %T", fileObj)
-	}
-	return compressor, nil
 }
